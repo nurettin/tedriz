@@ -5,10 +5,6 @@ from typing import Tuple, List, Optional
 import time
 import random
 import copy
-import logging
-
-logging.basicConfig(format='%(asctime)s  %(name)s %(levelname)-4s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-logger = logging.getLogger(__name__)
 
 
 def get_color(shape: int):
@@ -64,7 +60,6 @@ def piece_field_intersects(coord: List[int], piece_matrix: List[List[int]], fiel
             box_x = coord[0] + px
             box_y = coord[1] + py
             piece_shape = piece_matrix[py][px]
-            # print(f"box({box_x}, {box_y}, {piece_shape})")
             if piece_shape == 7:
                 continue
             if box_x > FIELD_WIDTH - 1:
@@ -130,6 +125,7 @@ SCREEN_WIDTH = 640
 SCREEN_HEIGHT = 480
 FIELD_WIDTH = 10
 FIELD_HEIGHT = 20
+DROP_WAIT = 500
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 
 DROP_EVENT = pygame.USEREVENT
@@ -137,10 +133,6 @@ RIGHT_SCROLL_EVENT = pygame.USEREVENT + 1
 LEFT_SCROLL_EVENT = pygame.USEREVENT + 2
 RESET_PIECE = pygame.USEREVENT + 3
 DOWN_SCROLL_EVENT = pygame.USEREVENT + 4
-
-pygame.time.set_timer(DROP_EVENT, 500)
-pygame.time.set_timer(RIGHT_SCROLL_EVENT, 0)
-pygame.time.set_timer(LEFT_SCROLL_EVENT, 0)
 
 block_size = 20
 
@@ -150,6 +142,9 @@ def generate_random_piece(future_shape: Optional[int] = None) -> Tuple[int, int,
     if new_shape is None:
         new_shape = random.randint(0, 6)
     next_shape = random.randint(0, 6)
+    # reduce possibility of getting two of the same pieces in a row
+    if new_shape == next_shape:
+        next_shape = random.randint(0, 6)
     new_rotation = 0
     new_piece_position = [4, 0]
     new_piece_matrix = get_piece_matrix(new_shape, new_rotation)
@@ -162,13 +157,37 @@ score_font = pygame.font.SysFont('Comic Sans MS', 30)
 class Game:
     def __init__(self):
         self.future_shape = None
-        self.shape, self.future_shape, self.rotation, self.piece_position, self.piece_matrix = generate_random_piece(self.future_shape)
         self.running = True
         self.score = 0
+        self.shape = 0
+        self.rotation = 0
+        self.piece_position = []
+        self.piece_matrix = []
         self.paused = False
+        self.drop_wait = 500
         self.state = "GAMING"
         self.field_coord = [int((SCREEN_WIDTH - FIELD_WIDTH * block_size) / 2), block_size]
+        self.field: List[List[int]] = []
+        self.start_game()
+
+    def touchdown(self):
+        add_piece_matrix_to_field(self.piece_position, self.piece_matrix, self.field)
+        prev_score = self.score
+        self.score += clear_field_lines(self.field)
+        if self.score // 10 > prev_score // 10:
+            self.drop_wait -= 100
+            pygame.time.set_timer(DROP_EVENT, DROP_WAIT)
+        self.shape, self.future_shape, self.rotation, self.piece_position, self.piece_matrix = generate_random_piece(self.future_shape)
+
+    def start_game(self):
+        self.running = True
+        self.drop_wait = 500
+        self.state = "GAMING"
         self.field: List[List[int]] = [[7] * FIELD_WIDTH for _ in range(0, FIELD_HEIGHT)]
+        self.shape, self.future_shape, self.rotation, self.piece_position, self.piece_matrix = generate_random_piece(self.future_shape)
+        pygame.time.set_timer(DROP_EVENT, DROP_WAIT)
+        pygame.time.set_timer(RIGHT_SCROLL_EVENT, 0)
+        pygame.time.set_timer(LEFT_SCROLL_EVENT, 0)
 
     def move_piece_left(self) -> bool:
         if self.paused:
@@ -205,6 +224,7 @@ class Game:
         return True
 
     def render_gaming_screen(self):
+        global DROP_WAIT
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
@@ -218,16 +238,13 @@ class Game:
                         self.piece_matrix = get_piece_matrix(self.shape, self.rotation)
                 elif event.key == pygame.K_LEFT:
                     self.move_piece_left()
-                    pygame.time.set_timer(LEFT_SCROLL_EVENT, 100)
+                    pygame.time.set_timer(LEFT_SCROLL_EVENT, 80)
                 elif event.key == pygame.K_RIGHT:
                     self.move_piece_right()
-                    pygame.time.set_timer(RIGHT_SCROLL_EVENT, 100)
+                    pygame.time.set_timer(RIGHT_SCROLL_EVENT, 80)
                 elif event.key == pygame.K_DOWN:
                     if not self.move_piece_down():
-                        add_piece_matrix_to_field(self.piece_position, self.piece_matrix, self.field)
-                        self.score += clear_field_lines(self.field)
-                        self.shape, self.future_shape, self.rotation, self.piece_position, self.piece_matrix = generate_random_piece(self.future_shape)
-                        print(f"shape: {self.shape}, future shape: {self.future_shape}")
+                        self.touchdown()
                         continue
                     pygame.time.set_timer(DOWN_SCROLL_EVENT, 50)
                 elif event.key == pygame.K_p:
@@ -245,10 +262,7 @@ class Game:
                     if self.piece_position[1] == 0:
                         self.state = "GAMEOVER"
                         return
-                    add_piece_matrix_to_field(self.piece_position, self.piece_matrix, self.field)
-                    self.score += clear_field_lines(self.field)
-                    self.shape, self.future_shape, self.rotation, self.piece_position, self.piece_matrix = generate_random_piece(self.future_shape)
-                    print(f"shape: {self.shape}, future shape: {self.future_shape}")
+                    self.touchdown()
             elif event.type == LEFT_SCROLL_EVENT:
                 self.move_piece_left()
             elif event.type == RIGHT_SCROLL_EVENT:
