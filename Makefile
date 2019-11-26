@@ -1,3 +1,3 @@
 run:
-	@PYGAME_HIDE_SUPPORT_PROMPT=1 python main.py
+	@PYGAME_HIDE_SUPPORT_PROMPT=1 python tedriz/tedriz
 
