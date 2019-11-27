@@ -1,22 +1,24 @@
-import setuptools
-
+#import setuptools
+from cx_Freeze import setup, Executable
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
-setuptools.setup(
+#setuptools.setup(
+setup(
     name="tedriz-nurettin",  # Replace with your own username
     version="0.0.1",
     author="Nurettin Onur TUĞCU",
     author_email="onur.tugcu@gmail.com",
     description="Block game built with pygame",
-    long_description="Block game built with pygame",
-    long_description_content_type="text/markdown",
-    url="https://github.com/nurettin/tedriz",
-    packages=setuptools.find_packages(),
-    classifiers=[
-        "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
-        "Operating System :: OS Independent",
-    ],
-    python_requires='>=3.6',
+    executables=[Executable("tedriz/tedriz")]
+    # long_description=long_description,
+    # long_description_content_type="text/markdown",
+    # url="https://github.com/nurettin/tedriz",
+    # # packages=setuptools.find_packages(),
+    # classifiers=[
+    #     "Programming Language :: Python :: 3",
+    #     "License :: OSI Approved :: MIT License",
+    #     "Operating System :: OS Independent",
+    # ],
+    # python_requires='>=3.6',
 )

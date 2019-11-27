@@ -4,11 +4,14 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [dev-packages]
+#mypy = "*"
+#autopep8 = "*"
+#setuptools = "*"
+#wheel = "*"
+#twine = "*"
+cx-freeze = "*"
 mypy = "*"
 autopep8 = "*"
-setuptools = "*"
-wheel = "*"
-twine = "*"
 
 [packages]
 pygame = "*"

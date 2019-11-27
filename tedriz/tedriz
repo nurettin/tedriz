@@ -1,33 +1,20 @@
 #!/usr/bin/env python3
 
 import pygame
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Any
 import time
 import random
 import copy
 import datetime
 
+shape_colors = {0: (255, 0, 0), 1: (0, 255, 0), 2: (0, 0, 255), 3: (255, 255, 0), 4: (255, 0, 255), 5: (0, 255, 255), 6: (255, 255, 255), 7: (0, 0, 0)}
+
 
 def get_color(shape: int):
-    if shape == 0:
-        return 255, 0, 0
-    elif shape == 1:
-        return 0, 255, 0
-    elif shape == 2:
-        return 0, 0, 255
-    elif shape == 3:
-        return 255, 255, 0
-    elif shape == 4:
-        return 255, 0, 255
-    elif shape == 5:
-        return 0, 255, 255
-    elif shape == 6:
-        return 255, 255, 255
-    else:
-        return 0, 0, 0
+    return shape_colors[shape]
 
 
-def draw_square(color: Tuple[int, int, int], coord: List[int], size: int, width: int = 2):
+def draw_square(screen: Any, color: Tuple[int, int, int], coord: List[int], size: int, width: int = 2):
     pygame.draw.polygon(screen, color, [
         (coord[0], coord[1]),
         (coord[0] + size, coord[1]),
@@ -36,14 +23,14 @@ def draw_square(color: Tuple[int, int, int], coord: List[int], size: int, width:
     ], width)
 
 
-def draw_piece(shape: int, rotation: int, coord: List[int], field_coord: Tuple[int, int], size: int, frame):
+def draw_piece(screen: Any, shape: int, rotation: int, coord: List[int], field_coord: Tuple[int, int], size: int, frame):
     color = get_color(shape)
     for y in range(0, 4):
         for x in range(0, 4):
             if shapes[shape][rotation] & (0x8000 >> (y * 4 + x)):
-                draw_square(color, [(coord[0] + x) * size + field_coord[0], (coord[1] + y) * size + field_coord[1]], size)
+                draw_square(screen, color, [(coord[0] + x) * size + field_coord[0], (coord[1] + y) * size + field_coord[1]], size)
     if frame:
-        draw_square((100, 200, 100), [coord[0] * size + field_coord[0] - size, coord[1] * size + field_coord[1] - size], 5 * size)
+        draw_square(screen, (100, 200, 100), [coord[0] * size + field_coord[0] - size, coord[1] * size + field_coord[1] - size], 5 * size)
 
 
 def get_piece_matrix(shape: int, rotation: int) -> List[List[int]]:
@@ -85,14 +72,14 @@ def add_piece_matrix_to_field(coord: List[int], piece_matrix: List[List[int]], f
                 field[coord[1] + y][coord[0] + x] = piece_matrix[y][x]
 
 
-def draw_field(field_coord: List[int], field: List[List[int]]):
+def draw_field(screen: Any, field_coord: List[int], field: List[List[int]]):
     for y in range(0, FIELD_HEIGHT):
         for x in range(0, FIELD_WIDTH):
             if field[y][x] == 7:
                 continue
             color = get_color(field[y][x])
             coord = [field_coord[0] + x * BLOCK_SIZE, field_coord[1] + y * BLOCK_SIZE]
-            draw_square(color, coord, BLOCK_SIZE, 0)
+            draw_square(screen, color, coord, BLOCK_SIZE, 0)
 
 
 def clear_field_lines(field: List[List[int]]):
@@ -124,6 +111,8 @@ SCREEN_WIDTH = 640
 SCREEN_HEIGHT = 480
 FIELD_WIDTH = 10
 FIELD_HEIGHT = 20
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
 pygame.init()
 pygame.display.set_caption(f"tedriz {VERSION}")
 pygame.display.set_icon(pygame.image.load("tedriz.png"))
@@ -136,6 +125,8 @@ LEFT_SCROLL_EVENT = pygame.USEREVENT + 2
 RESET_PIECE = pygame.USEREVENT + 3
 DOWN_SCROLL_EVENT = pygame.USEREVENT + 4
 APM_EVENT = pygame.USEREVENT + 5
+FIELD_ROTATE_EVENT = pygame.USEREVENT + 6
+FIELD_MOVE_EVENT = pygame.USEREVENT + 7
 BLOCK_SIZE = 20
 
 
@@ -172,6 +163,11 @@ class Game:
         self.apm = 0
         self.state = "GAMING"
         self.action_count = 0
+        self.angle = 0
+        self.freak_out = False
+        self.speed = 0
+        self.shake = False
+        self.flip = False
         self.start_time = datetime.datetime.now()
         self.field_coord = [int((SCREEN_WIDTH - FIELD_WIDTH * BLOCK_SIZE) / 2), BLOCK_SIZE]
         self.field: List[List[int]] = []
@@ -183,17 +179,34 @@ class Game:
         self.lines += clear_field_lines(self.field)
         self.score += (self.lines - prev_lines) ** 2
         if self.lines // 10 > prev_lines // 10:
+            if self.lines > 40:
+                if self.speed_up > 10:
+                    self.speed_up = 10
+                    pygame.time.set_timer(FIELD_ROTATE_EVENT, 150)
+            if self.lines > 50:
+                self.freak_out = True
+            if self.lines > 60:
+                if not self.shake:
+                    self.shake = True
+                    pygame.time.set_timer(FIELD_MOVE_EVENT, 150)
+            if self.lines > 70:
+                self.flip = True
             self.drop_wait -= self.speed_up
             pygame.time.set_timer(DROP_EVENT, self.drop_wait)
         self.shape, self.future_shape, self.rotation, self.piece_position, self.piece_matrix = generate_random_piece(self.future_shape)
 
     def start_game(self):
         self.running = True
-        self.lines = 0
+        self.lines = 30
         self.score = 0
         self.action_count = 0
         self.drop_wait = 500
         self.apm = 0
+        self.angle = 0
+        self.freak_out = False
+        self.speed = 0
+        self.shake = False
+        self.flip = False
         self.state = "GAMING"
         self.field: List[List[int]] = [[7] * FIELD_WIDTH for _ in range(0, FIELD_HEIGHT)]
         self.shape, self.future_shape, self.rotation, self.piece_position, self.piece_matrix = generate_random_piece(self.future_shape)
@@ -284,21 +297,34 @@ class Game:
                 self.move_piece_right()
             elif event.type == APM_EVENT:
                 self.apm = int(self.action_count / ((datetime.datetime.now() - self.start_time).total_seconds() / 60))
+            elif event.type == FIELD_ROTATE_EVENT:
+                self.angle += random.randint(-1, 1)
+            if event.type == FIELD_MOVE_EVENT:
+                self.speed += random.randint(-2, 2)
 
-        screen.fill((0, 0, 0))
-        draw_field(self.field_coord, self.field)
-        pygame.draw.rect(screen, (0, 255, 0), [tuple(self.field_coord), (FIELD_WIDTH * BLOCK_SIZE, FIELD_HEIGHT * BLOCK_SIZE)], 2)
-        draw_piece(self.shape, self.rotation, self.piece_position, (self.field_coord[0], self.field_coord[1]), BLOCK_SIZE, False)
-        draw_piece(self.future_shape, 0, [15, 10], (self.field_coord[0], self.field_coord[1]), BLOCK_SIZE, True)
+        output = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        output.fill(BLACK)
+        draw_field(output, self.field_coord, self.field)
+        pygame.draw.rect(output, (0, 255, 0), [tuple(self.field_coord), (FIELD_WIDTH * BLOCK_SIZE, FIELD_HEIGHT * BLOCK_SIZE)], 2)
+        draw_piece(output, self.shape, self.rotation, self.piece_position, (self.field_coord[0], self.field_coord[1]), BLOCK_SIZE, False)
+        draw_piece(output, self.future_shape, 0, [15, 10], (self.field_coord[0], self.field_coord[1]), BLOCK_SIZE, True)
         if self.paused:
-            score_image = score_font.render(f"Skor: {self.score} (PAUSED)", True, (255, 255, 255))
+            score_image = score_font.render(f"Skor: {self.score} (PAUSED)", True, WHITE)
         else:
-            score_image = score_font.render(f"Skor: {self.score}", True, (255, 255, 255))
-        screen.blit(score_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2)))
-        lines_image = score_font.render(f"Satır: {self.lines}", True, (255, 255, 255))
-        screen.blit(lines_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2) + 25))
-        apm_image = score_font.render(f"APM: {self.apm}", True, (255, 255, 255))
-        screen.blit(apm_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2) + 50))
+            score_image = score_font.render(f"Skor: {self.score}", True, WHITE)
+        output.blit(score_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2)))
+        lines_image = score_font.render(f"Satır: {self.lines}", True, WHITE)
+        output.blit(lines_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2) + 25))
+        apm_image = score_font.render(f"APM: {self.apm}", True, WHITE)
+        output.blit(apm_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2) + 50))
+        if self.angle != 0:
+            output = pygame.transform.rotate(output, self.angle)
+        output = pygame.transform.smoothscale(output, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        if self.flip:
+            output = pygame.transform.flip(output)
+        if self.freak_out:
+            output = pygame.transform.laplacian(output)
+        screen.blit(output, (self.speed, self.speed))
 
     def render_gameover_screen(self):
         for event in pygame.event.get():
@@ -311,18 +337,20 @@ class Game:
                 elif event.key == pygame.K_n:
                     self.running = False
                     return
-        screen.fill((0, 0, 0))
-        question_image = score_font.render(f"Game over. Continue? (y/n)", True, (255, 255, 255))
-        screen.blit(question_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 3), int(SCREEN_HEIGHT / 2)))
+        output = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        output.fill(BLACK)
+        question_image = score_font.render(f"Game over. Continue? (y/n)", True, WHITE)
+        output.blit(question_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 3), int(SCREEN_HEIGHT / 2)))
         if self.paused:
-            score_image = score_font.render(f"Skor: {self.score} (PAUSED)", True, (255, 255, 255))
+            score_image = score_font.render(f"Skor: {self.score} (PAUSED)", True, WHITE)
         else:
-            score_image = score_font.render(f"Skor: {self.score}", True, (255, 255, 255))
-        screen.blit(score_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2)))
-        lines_image = score_font.render(f"Satır: {self.lines}", True, (255, 255, 255))
-        screen.blit(lines_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2) + 25))
-        apm_image = score_font.render(f"APM: {self.apm}", True, (255, 255, 255))
-        screen.blit(apm_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2) + 50))
+            score_image = score_font.render(f"Skor: {self.score}", True, WHITE)
+        output.blit(score_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2)))
+        lines_image = score_font.render(f"Satır: {self.lines}", True, WHITE)
+        output.blit(lines_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2) + 25))
+        apm_image = score_font.render(f"APM: {self.apm}", True, WHITE)
+        output.blit(apm_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2) + 50))
+        screen.blit(output, (0, 0))
 
     def run(self):
         while self.running:
