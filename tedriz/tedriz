@@ -158,26 +158,29 @@ class Game:
         self.piece_position = []
         self.piece_matrix = []
         self.paused = False
-        self.speed_up = 50
-        self.drop_wait = 500
-        self.apm = 0
+        self.speed_up = 50  # drop acceleration per 10 lines (slows down after a limit)
+        self.drop_wait = 500  # starting drop speed
+        self.apm = 0  # average apm since beginning
         self.state = "GAMING"
-        self.action_count = 0
-        self.angle = 0
-        self.freak_out = False
-        self.speed = 0
-        self.shake = False
-        self.flip = False
+        self.action_count = 0  # counter for apm calculation
+        self.angle = 0  # angle of field rotation
+        self.freak_out = False  # activate laplacian filter
+        self.speed = 0  # speed of field shaking
+        self.shake = False  # activate shaking of the field
+        self.flip = False  # activate flipping of the field
+        self.ratio = 0  # average number of lines destroyed
         self.start_time = datetime.datetime.now()
         self.field_coord = [int((SCREEN_WIDTH - FIELD_WIDTH * BLOCK_SIZE) / 2), BLOCK_SIZE]
         self.field: List[List[int]] = []
         self.start_game()
 
-    def touchdown(self):
+    def touchdown(self, with_space: bool = False):
         add_piece_matrix_to_field(self.piece_position, self.piece_matrix, self.field)
         prev_lines = self.lines
         self.lines += clear_field_lines(self.field)
         self.score += (self.lines - prev_lines) ** 2
+        if with_space:
+            self.score += self.lines - prev_lines
         if self.lines // 10 > prev_lines // 10:
             if self.lines > 40:
                 if self.speed_up > 10:
@@ -197,7 +200,7 @@ class Game:
 
     def start_game(self):
         self.running = True
-        self.lines = 30
+        self.lines = 0
         self.score = 0
         self.action_count = 0
         self.drop_wait = 500
@@ -208,6 +211,7 @@ class Game:
         self.shake = False
         self.flip = False
         self.state = "GAMING"
+        self.ratio = 0
         self.field: List[List[int]] = [[7] * FIELD_WIDTH for _ in range(0, FIELD_HEIGHT)]
         self.shape, self.future_shape, self.rotation, self.piece_position, self.piece_matrix = generate_random_piece(self.future_shape)
         self.start_time = datetime.datetime.now()
@@ -275,8 +279,16 @@ class Game:
                         self.touchdown()
                         continue
                     pygame.time.set_timer(DOWN_SCROLL_EVENT, 50)
+                elif event.key == pygame.K_SPACE:
+                    while self.move_piece_down():
+                        pass
+                    self.touchdown()
+                    continue
                 elif event.key == pygame.K_p:
                     self.paused = not self.paused
+                elif event.key == pygame.K_ESCAPE:
+                    self.state = "RESTART"
+                    return
             elif event.type == pygame.KEYUP:
                 if event.key == pygame.K_LEFT:
                     pygame.time.set_timer(LEFT_SCROLL_EVENT, 0)
@@ -308,6 +320,10 @@ class Game:
         pygame.draw.rect(output, (0, 255, 0), [tuple(self.field_coord), (FIELD_WIDTH * BLOCK_SIZE, FIELD_HEIGHT * BLOCK_SIZE)], 2)
         draw_piece(output, self.shape, self.rotation, self.piece_position, (self.field_coord[0], self.field_coord[1]), BLOCK_SIZE, False)
         draw_piece(output, self.future_shape, 0, [15, 10], (self.field_coord[0], self.field_coord[1]), BLOCK_SIZE, True)
+        escape_image = score_font.render("ESC to quit/restart", True, WHITE)
+        output.blit(escape_image, (BLOCK_SIZE, BLOCK_SIZE))
+        escape_image = score_font.render("P to pause/unpause", True, WHITE)
+        output.blit(escape_image, (BLOCK_SIZE, BLOCK_SIZE + 25))
         if self.paused:
             score_image = score_font.render(f"Skor: {self.score} (PAUSED)", True, WHITE)
         else:
@@ -321,7 +337,7 @@ class Game:
             output = pygame.transform.rotate(output, self.angle)
         output = pygame.transform.smoothscale(output, (SCREEN_WIDTH, SCREEN_HEIGHT))
         if self.flip:
-            output = pygame.transform.flip(output)
+            output = pygame.transform.flip(output, True, True)
         if self.freak_out:
             output = pygame.transform.laplacian(output)
         screen.blit(output, (self.speed, self.speed))
@@ -352,12 +368,40 @@ class Game:
         output.blit(apm_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2) + 50))
         screen.blit(output, (0, 0))
 
+    def render_restart_screen(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_y:
+                    self.start_game()
+                    return
+                elif event.key == pygame.K_n:
+                    self.running = False
+                    return
+        output = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        output.fill(BLACK)
+        question_image = score_font.render(f"Restart game? (y/n)", True, WHITE)
+        output.blit(question_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 3), int(SCREEN_HEIGHT / 2)))
+        if self.paused:
+            score_image = score_font.render(f"Skor: {self.score} (PAUSED)", True, WHITE)
+        else:
+            score_image = score_font.render(f"Skor: {self.score}", True, WHITE)
+        output.blit(score_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2)))
+        lines_image = score_font.render(f"Satır: {self.lines}", True, WHITE)
+        output.blit(lines_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2) + 25))
+        apm_image = score_font.render(f"APM: {self.apm}", True, WHITE)
+        output.blit(apm_image, (int((SCREEN_WIDTH - FIELD_WIDTH) / 16), int(SCREEN_HEIGHT / 2) + 50))
+        screen.blit(output, (0, 0))
+
     def run(self):
         while self.running:
             if self.state == "GAMING":
                 self.render_gaming_screen()
             elif self.state == "GAMEOVER":
                 self.render_gameover_screen()
+            elif self.state == "RESTART":
+                self.render_restart_screen()
             time.sleep(0.01)
             pygame.display.flip()
 
